@@ -389,22 +389,29 @@ def get_user_input():
     N_POINTS_PER_PRESSURE = int(n_input)
 
     # VISCOSITY_MODEL
+    console.print()
+    console.print("[dim]选择粘度模型：[/]")
+    console.print("  [cyan]1[/] - McAdams：调和平均，基于质量含气率Q，适用于常规两相流压降计算")
+    console.print("  [cyan]2[/] - Cicchitti：体积加权算术平均，基于气相体积分数，适用于高流速均匀流动 [dim](推荐)[/]")
     default_vis = 'cicchitti'
     vis_input = Prompt.ask(
         "[bold]粘度模型[/]",
         choices=["1", "2"],
-        default="2",
-        show_choices=False
+        default="2"
     )
     VISCOSITY_MODEL = 'mcadams' if vis_input == "1" else default_vis
 
     # CP_METHOD
+    console.print()
+    console.print("[dim]选择等效比热容方法：[/]")
+    console.print("  [cyan]1[/] - weighted：质量加权平均 cp = (1-Q)·CP_LIQ + Q·CP_VAP")
+    console.print("  [cyan]2[/] - enthalpy_based：基于焓差的等效比热容 [dim](推荐)[/]")
+    console.print("  [cyan]3[/] - gas：直接使用饱和气比热容 CP_VAP [dim](不推荐，忽略温度滑移)[/]")
     default_cp = 'enthalpy_based'
     cp_input = Prompt.ask(
         "[bold]等效比热容方法[/]",
         choices=["1", "2", "3"],
-        default="2",
-        show_choices=False
+        default="2"
     )
     if cp_input == "1":
         CP_METHOD = 'weighted'
@@ -592,4 +599,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]用户中断[/]")
+    except Exception as e:
+        console.print(f"\n[red]程序出错:[/] {e}")
+    finally:
+        console.print()
+        console.print("=" * 60)
+        Prompt.ask("[dim]按回车键退出[/]")
