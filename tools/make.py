@@ -2,6 +2,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+if sys.stdout.encoding != "UTF-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from utils import console, run_command
 
 from config import __version__

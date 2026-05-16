@@ -2,7 +2,11 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+if sys.stdout.encoding != "UTF-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from config import (
     DATA_DIR,
