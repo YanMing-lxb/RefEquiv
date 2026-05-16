@@ -1,0 +1,77 @@
+name: Publish RefEquiv
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install project
+        run: uv sync --dev
+
+      - name: Build executable
+        run: |
+          cd ${{ github.workspace }}
+          uv run tools/pack.py
+
+      - name: List dist directory
+        run: dir dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RefEquiv-executable
+          path: dist/RefEquiv.exe
+
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-windows
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: RefEquiv-executable
+          path: dist/
+
+      - name: Verify files
+        run: ls -la dist/
+
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Read changelog
+        run: |
+          changelog=$(cat CHANGELOG.md 2>/dev/null || echo "Initial release")
+          echo "$changelog" > CHANGELOG_RELEASE.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG_RELEASE.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: RefEquiv ${{ env.TAG_NAME }}
+          files: |
+            dist/RefEquiv.exe
