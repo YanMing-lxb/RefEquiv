@@ -354,14 +354,8 @@ def get_user_input():
     交互式获取用户输入参数，提供默认值说明。
     """
     console.print()
-    console.print("  [bold cyan]  ____      __  ___     _       _[/]")
-    console.print("  [bold cyan] |  _ \\ ___|  \\/  |    (_)_   _(_)_ __[/]")
-    console.print("  [bold cyan] | |_) / _ \\ |\\/| |    | \\ \\ / / | '_ \\[/]")
-    console.print("  [bold cyan] |  _ <  __/ |  | |    | |\\ V /| | |_) |[/]")
-    console.print("  [bold cyan] |_| \\_\\___|_|  |_|____|_| \\_/ |_| .__/[/]")
-    console.print("  [bold cyan]                |_____|          |_|[/]")
-    console.print()
-    console.print("  [dim]制冷剂等效气相物性计算器[/]")
+    console.print("=" * 60)
+    console.print("            [bold cyan]RefEquiv[/] - [dim]制冷剂等效气相物性计算器[/]")
     console.print("=" * 60)
     console.print("\n[dim]提示：直接回车使用默认值[/]\n")
 
