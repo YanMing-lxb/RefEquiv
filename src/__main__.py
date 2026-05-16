@@ -14,6 +14,12 @@ import os
 import numpy as np
 import pandas as pd
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
+from rich.console import Console
+from rich.prompt import Prompt
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.text import Text
+
+console = Console()
 
 
 def calculate_equivalent_thermal_conductivity(λ_l, λ_v, φ_v):
@@ -95,29 +101,34 @@ def calculate_equivalent_viscosity(μ_l, μ_v, Q, φ_v, model='mcadams'):
 
 def safe_refprop_call(RP, fluid, inputs, outputs, units, iMass, iFlag, prop1, prop2, z):
     """
-    安全调用 REFPROP 底层 DLL，忽略特定无害警告（如接近临界点时迭代轻微不收敛）。
-    REFPROP 返回的 ierr 含义：
-        ierr < 0 : 警告（计算结果仍可用，忽略代码 -319, -320, -113）
+    安全调用REFPROP底层DLL，忽略特定无害警告（如接近临界点时迭代轻微不收敛）。
+    REFPROP返回的ierr含义：
+        ierr < 0 : 警告（计算结果仍可用，忽略代码-319, -320, -113）
         ierr > 0 : 严重错误，中止计算
 
     参数:
-        RP     : REFPROPFunctionLibrary 实例
+        RP     : REFPROPFunctionLibrary实例
         fluid  : 流体名称
-        inputs : 输入类型，如 "PQ"
+        inputs : 输入类型，如"PQ"
         outputs: 输出变量字符串，分号分隔
-        units  : 单位制（如 RP.MASS_BASE_SI）
+        units  : 单位制（如RP.MASS_BASE_SI）
         iMass  : 质量基标志
         iFlag  : 标志位
         prop1, prop2 : 输入变量值
         z      : 组分数组（纯流体为空列表）
 
     返回:
-        res : REFPROP 返回对象
+        res : REFPROP返回对象
     """
     res = RP.REFPROPdll(fluid, inputs, outputs, units, iMass, iFlag, prop1, prop2, z)
     if res.ierr < 0:
         if res.ierr not in [-319, -320, -113]:
-            print(f"⚠️  REFPROP警告 (ierr={res.ierr}): {res.herr}")
+            warn_text = Text()
+            warn_text.append("[WARN] REFPROP警告 (", style="yellow")
+            warn_text.append(f"ierr={res.ierr}", style="cyan")
+            warn_text.append("): ", style="yellow")
+            warn_text.append(f"{res.herr}", style="dim")
+            console.print(warn_text)
     elif res.ierr > 0:
         raise Exception(f"REFPROP错误 (ierr={res.ierr}): {res.herr}")
     return res
@@ -185,7 +196,14 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
     if T_dew <= T_bubble:
         raise ValueError(f"温度滑移异常：露点({T_dew:.2f}℃) ≤ 泡点({T_bubble:.2f}℃)")
 
-    print(f"  泡点: {T_bubble:.2f}℃, 露点: {T_dew:.2f}℃, 滑移: {T_dew - T_bubble:.2f}℃")
+    temp_text = Text()
+    temp_text.append("  泡点: ", style="dim")
+    temp_text.append(f"{T_bubble:.2f}℃", style="blue")
+    temp_text.append(", 露点: ", style="dim")
+    temp_text.append(f"{T_dew:.2f}℃", style="blue")
+    temp_text.append(", 滑移: ", style="dim")
+    temp_text.append(f"{T_dew - T_bubble:.2f}℃", style="cyan")
+    console.print(temp_text)
 
     # 预先获取泡点下的饱和液焓（用于 enthalpy_based 方法）
     h_sat_liq_bubble = get_single_prop(RP, fluid, p_Pa, 0.0, "H") if cp_method == 'enthalpy_based' else None
@@ -198,8 +216,16 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
     D_L = get_single_prop(RP, fluid, p_Pa, 0.0, "DLIQ")    # 液相密度
     D_V = get_single_prop(RP, fluid, p_Pa, 1.0, "DVAP")    # 气相密度
 
-    print(f"  物性核对: THC_L={THC_L:.4f}, THC_V={THC_V:.4f}, "
-          f"VIS_L={VIS_L:.2e}, VIS_V={VIS_V:.2e}")
+    prop_text = Text()
+    prop_text.append("  物性核对: ", style="dim")
+    prop_text.append(f"THC_L={THC_L:.4f}", style="green")
+    prop_text.append(", ", style="dim")
+    prop_text.append(f"THC_V={THC_V:.4f}", style="green")
+    prop_text.append(", ", style="dim")
+    prop_text.append(f"VIS_L={VIS_L:.2e}", style="magenta")
+    prop_text.append(", ", style="dim")
+    prop_text.append(f"VIS_V={VIS_V:.2e}", style="magenta")
+    console.print(prop_text)
 
     if any(np.isnan([CP_L, CP_V, D_L, D_V, THC_L, THC_V, VIS_L, VIS_V])):
         raise ValueError("REFPROP返回了NaN值")
@@ -247,7 +273,17 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
 
             # ----- 合理性检查 -----
             if not (min(THC_L, THC_V) - 1e-10 <= λ_eq <= max(THC_L, THC_V) + 1e-10):
-                print(f"⚠️  Q={Q:.3f} 等效导热率异常: {λ_eq:.6f} (液:{THC_L:.4f}, 气:{THC_V:.4f})")
+                warn_text = Text()
+                warn_text.append("[WARN] ", style="yellow")
+                warn_text.append(f"Q={Q:.3f}", style="cyan")
+                warn_text.append(" 等效导热率异常: ", style="yellow")
+                warn_text.append(f"{λ_eq:.6f}", style="red")
+                warn_text.append(" (液:", style="dim")
+                warn_text.append(f"{THC_L:.4f}", style="green")
+                warn_text.append(", 气:", style="dim")
+                warn_text.append(f"{THC_V:.4f}", style="green")
+                warn_text.append(")", style="dim")
+                console.print(warn_text)
 
             data.append({
                 '干度Q': Q,
@@ -262,7 +298,12 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
             })
 
         except Exception as e:
-            print(f"⚠️  干度Q={Q:.3f}计算失败: {e}")
+            err_text = Text()
+            err_text.append("[WARN] ", style="yellow")
+            err_text.append(f"干度Q={Q:.3f}", style="cyan")
+            err_text.append("计算失败: ", style="yellow")
+            err_text.append(f"{e}", style="red")
+            console.print(err_text)
             continue
 
     if len(data) < 2:
@@ -295,67 +336,82 @@ def get_refprop_path():
     # 检查常用路径
     for path in common_paths:
         if path and os.path.exists(path):
-            print(f"✓ 找到REFPROP路径: {path}")
+            console.print(f"[OK] 找到REFPROP路径: [cyan]{path}[/]")
             return path
     
-    print("⚠️  未找到REFPROP路径，请输入REFPROP安装路径")
+    console.print("[WARN] 未找到REFPROP路径，请输入REFPROP安装路径")
     while True:
-        user_path = input("请输入REFPROP安装路径: ").strip()
+        user_path = Prompt.ask("REFPROP安装路径").strip()
         if os.path.exists(user_path):
-            print(f"✓ 使用REFPROP路径: {user_path}")
+            console.print(f"[OK] 使用REFPROP路径: [cyan]{user_path}[/]")
             return user_path
         else:
-            print("❌  路径不存在，请重新输入！")
+            console.print("[ERR] 路径不存在，请重新输入！")
 
 
 def get_user_input():
     """
     交互式获取用户输入参数，提供默认值说明。
     """
-    print("=" * 60)
-    print("RefEquiv - 制冷剂等效气相物性计算器")
-    print("=" * 60)
-    print()
-    print("提示：直接回车使用默认值")
-    print()
+    console.print()
+    console.print("  [bold cyan]  ____      __  ___     _       _[/]")
+    console.print("  [bold cyan] |  _ \\ ___|  \\/  |    (_)_   _(_)_ __[/]")
+    console.print("  [bold cyan] | |_) / _ \\ |\\/| |    | \\ \\ / / | '_ \\[/]")
+    console.print("  [bold cyan] |  _ <  __/ |  | |    | |\\ V /| | |_) |[/]")
+    console.print("  [bold cyan] |_| \\_\\___|_|  |_|____|_| \\_/ |_| .__/[/]")
+    console.print("  [bold cyan]                |_____|          |_|[/]")
+    console.print()
+    console.print("  [dim]制冷剂等效气相物性计算器[/]")
+    console.print("=" * 60)
+    console.print("\n[dim]提示：直接回车使用默认值[/]\n")
 
     # FLUID
     default_fluid = "R454C"
-    fluid = input(f"请输入流体名称 [默认: {default_fluid}]: ").strip()
-    if not fluid:
-        fluid = default_fluid
+    fluid = Prompt.ask(
+        "[bold]流体名称[/]",
+        default=default_fluid
+    )
 
     # PRESSURE_RANGE_MPa (无默认值)
-    pressure_input = ""
-    while not pressure_input:
-        pressure_input = input("请输入压力值（MPa，多个用空格分隔）: ").strip()
-        if not pressure_input:
-            print("⚠️  压力值不能为空，请重新输入！")
-    PRESSURE_RANGE_MPa = [float(p) for p in pressure_input.split()]
+    while True:
+        pressure_input = Prompt.ask(
+            "[bold]压力值（MPa，多个用空格分隔）[/]"
+        )
+        if pressure_input and pressure_input.strip():
+            try:
+                PRESSURE_RANGE_MPa = [float(p) for p in pressure_input.split()]
+                break
+            except ValueError:
+                console.print("[red][WARN][/] 请输入有效的数值！")
+        else:
+            console.print("[red][WARN][/] 压力值不能为空！")
 
     # N_POINTS_PER_PRESSURE
     default_n_points = 50
-    n_input = input(f"请输入每个压力的干度离散点数 [默认: {default_n_points}]: ").strip()
-    N_POINTS_PER_PRESSURE = int(n_input) if n_input else default_n_points
+    n_input = Prompt.ask(
+        "[bold]每个压力的干度离散点数[/]",
+        default=str(default_n_points)
+    )
+    N_POINTS_PER_PRESSURE = int(n_input)
 
     # VISCOSITY_MODEL
     default_vis = 'cicchitti'
-    print(f"请选择粘度模型:")
-    print(f"  1 - mcadams")
-    print(f"  2 - cicchitti [默认]")
-    vis_input = input("请选择 (1/2): ").strip()
-    if vis_input == "1":
-        VISCOSITY_MODEL = 'mcadams'
-    else:
-        VISCOSITY_MODEL = default_vis
+    vis_input = Prompt.ask(
+        "[bold]粘度模型[/]",
+        choices=["1", "2"],
+        default="2",
+        show_choices=False
+    )
+    VISCOSITY_MODEL = 'mcadams' if vis_input == "1" else default_vis
 
     # CP_METHOD
     default_cp = 'enthalpy_based'
-    print(f"请选择等效比热容方法:")
-    print(f"  1 - weighted (质量加权平均)")
-    print(f"  2 - enthalpy_based (基于焓差，推荐) [默认]")
-    print(f"  3 - gas (直接用饱和气比热容，不推荐)")
-    cp_input = input("请选择 (1/2/3): ").strip()
+    cp_input = Prompt.ask(
+        "[bold]等效比热容方法[/]",
+        choices=["1", "2", "3"],
+        default="2",
+        show_choices=False
+    )
     if cp_input == "1":
         CP_METHOD = 'weighted'
     elif cp_input == "3":
@@ -363,16 +419,17 @@ def get_user_input():
     else:
         CP_METHOD = default_cp
 
-    print()
-    print("-" * 60)
-    print("配置确认:")
-    print(f"  流体: {fluid}")
-    print(f"  压力: {', '.join([f'{p:.3f}' for p in PRESSURE_RANGE_MPa])} MPa")
-    print(f"  离散点数: {N_POINTS_PER_PRESSURE}")
-    print(f"  粘度模型: {VISCOSITY_MODEL}")
-    print(f"  比热容方法: {CP_METHOD}")
-    print("-" * 60)
-    print()
+    # 配置确认
+    console.print()
+    console.print("[bold]配置确认[/]")
+    console.print("-" * 40)
+    console.print(f"  流体: [yellow]{fluid}[/]")
+    console.print(f"  压力: [yellow]{', '.join([f'{p:.3f}' for p in PRESSURE_RANGE_MPa])} MPa[/]")
+    console.print(f"  离散点数: [yellow]{N_POINTS_PER_PRESSURE}[/]")
+    console.print(f"  粘度模型: [yellow]{VISCOSITY_MODEL}[/]")
+    console.print(f"  比热容方法: [yellow]{CP_METHOD}[/]")
+    console.print("-" * 40)
+    console.print()
 
     return fluid, PRESSURE_RANGE_MPa, N_POINTS_PER_PRESSURE, VISCOSITY_MODEL, CP_METHOD
 
@@ -395,7 +452,14 @@ def main():
     # 获取并验证REFPROP路径
     REFPROP_PATH = get_refprop_path()
     
-    print(f"\n初始化 REFPROP: {REFPROP_PATH}")
+    console.print()
+    console.print(Text.assemble(
+        "初始化 ",
+        ("REFPROP", "bold cyan"),
+        ": ",
+        (f"{REFPROP_PATH}", "dim")
+    ))
+    
     try:
         RP = REFPROPFunctionLibrary(REFPROP_PATH)
         RP.SETPATHdll(REFPROP_PATH)
@@ -404,49 +468,133 @@ def main():
         test_p = PRESSURE_RANGE_MPa[0] * 1e6
         T_test_b = get_single_prop(RP, FLUID, test_p, 0.0, "T") - 273.15
         T_test_d = get_single_prop(RP, FLUID, test_p, 1.0, "T") - 273.15
-        print(f"REFPROP 就绪 | {FLUID} @ {PRESSURE_RANGE_MPa[0]:.3f} MPa: 泡点 {T_test_b:.2f}℃, 露点 {T_test_d:.2f}℃, "
-              f"滑移 {T_test_d - T_test_b:.2f}℃\n")
+        
+        ready_text = Text()
+        ready_text.append("[OK] REFPROP ", style="green bold")
+        ready_text.append("就绪 | ", style="green")
+        ready_text.append(f"{FLUID}", style="cyan bold")
+        ready_text.append(" @ ", style="dim")
+        ready_text.append(f"{PRESSURE_RANGE_MPa[0]:.3f} MPa", style="yellow")
+        ready_text.append(": 泡点 ", style="dim")
+        ready_text.append(f"{T_test_b:.2f}℃", style="blue")
+        ready_text.append(", 露点 ", style="dim")
+        ready_text.append(f"{T_test_d:.2f}℃", style="blue")
+        ready_text.append(", 滑移 ", style="dim")
+        ready_text.append(f"{T_test_d - T_test_b:.2f}℃", style="cyan")
+        console.print(ready_text)
+        console.print()
     except Exception as e:
-        print(f"❌ REFPROP 初始化失败: {e}")
+        console.print(Text.assemble(
+            ("[ERR] REFPROP 初始化失败: ", "red bold"),
+            (f"{e}", "red")
+        ))
         return
 
     all_data = []
-    for p in PRESSURE_RANGE_MPa:
-        print(f"计算压力: {p:.3f} MPa")
-        try:
-            df, T_bubble, T_dew = generate_single_pressure_table(
-                RP, FLUID, p, N_POINTS_PER_PRESSURE,
-                μ_model=VISCOSITY_MODEL,
-                cp_method=CP_METHOD
-            )
-            df.insert(0, '压力(MPa)', p)
-            all_data.append(df)
-            print(f"压力 {p:.3f} MPa 完成，有效点: {len(df)}\n")
-        except Exception as e:
-            print(f"压力 {p:.3f} MPa 失败: {e}\n")
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        main_task = progress.add_task("计算物性数据...", total=len(PRESSURE_RANGE_MPa))
+        
+        for p in PRESSURE_RANGE_MPa:
+            progress.update(main_task, description=f"计算压力: [yellow]{p:.3f}[/] MPa")
+            
+            try:
+                df, T_bubble, T_dew = generate_single_pressure_table(
+                    RP, FLUID, p, N_POINTS_PER_PRESSURE,
+                    μ_model=VISCOSITY_MODEL,
+                    cp_method=CP_METHOD
+                )
+                df.insert(0, '压力(MPa)', p)
+                all_data.append(df)
+                
+                success_text = Text()
+                success_text.append("  [OK] 压力 ", style="dim")
+                success_text.append(f"{p:.3f} MPa", style="yellow")
+                success_text.append(" 完成，有效点: ", style="dim")
+                success_text.append(f"{len(df)}", style="green bold")
+                console.print(success_text)
+                console.print()
+            except Exception as e:
+                err_text = Text()
+                err_text.append("  [ERR] 压力 ", style="dim")
+                err_text.append(f"{p:.3f} MPa", style="yellow")
+                err_text.append(" 失败: ", style="red")
+                err_text.append(f"{e}", style="red dim")
+                console.print(err_text)
+                console.print()
+            
+            progress.advance(main_task)
 
     if not all_data:
-        print("无数据可输出。")
+        console.print("[red]无数据可输出。[/]")
         return
 
     final_df = pd.concat(all_data, ignore_index=True)
 
-    print(f"写入 Excel: {OUTPUT_EXCEL_PATH}")
+    console.print(Text.assemble(
+        "写入 ",
+        ("Excel", "bold green"),
+        ": ",
+        (f"{OUTPUT_EXCEL_PATH}", "cyan")
+    ))
+    
     with pd.ExcelWriter(OUTPUT_EXCEL_PATH, engine='openpyxl', mode='w') as writer:
         unique_pressures = list(dict.fromkeys(PRESSURE_RANGE_MPa))
         for p in unique_pressures:
             sub = final_df[final_df['压力(MPa)'] == p].drop(columns=['压力(MPa)'])
             sub.to_excel(writer, sheet_name=f'{p}MPa', index=False)
 
-    print(f"完成！共 {len(PRESSURE_RANGE_MPa)} 个压力，{len(final_df)} 行数据")
+    console.print()
+    console.print("=" * 60)
+    console.print(
+        Text.assemble(
+            ("[OK] 完成！", "bold green"),
+            " 共 ",
+            (f"{len(PRESSURE_RANGE_MPa)}", "cyan bold"),
+            " 个压力，",
+            (f"{len(final_df)}", "cyan bold"),
+            " 行数据"
+        )
+    )
+    console.print("=" * 60)
 
     # 预览
+    console.print()
     for p in unique_pressures:
         pdata = final_df[final_df['压力(MPa)'] == p]
-        print(f"\n----- {p} MPa 结果预览 (等效比热容方法: {CP_METHOD}) -----")
-        print(pdata[['温度(℃)', '干度Q', '等效比热容(J/kg-K)',
-                     '等效导热率(W/m-K)', '等效动力粘度(Pa-s)']].head(5).to_string(index=False))
-        print("...")
+        
+        preview_title = Text()
+        preview_title.append("-> ", style="cyan")
+        preview_title.append(f"{p} MPa", style="yellow bold")
+        preview_title.append(" 结果预览", style="dim")
+        preview_title.append(f" (等效比热容方法: {CP_METHOD})", style="dim")
+        
+        console.print(preview_title)
+        
+        # 显示预览数据（不用table）
+        preview_data = pdata[['温度(℃)', '干度Q', '等效比热容(J/kg-K)',
+                            '等效导热率(W/m-K)', '等效动力粘度(Pa-s)']].head(5)
+        
+        for _, row in preview_data.iterrows():
+            line = Text()
+            line.append("  ", style="dim")
+            line.append(f"温度={row['温度(℃)']:.2f}℃", style="blue")
+            line.append(" | ", style="dim")
+            line.append(f"Q={row['干度Q']:.3f}", style="cyan")
+            line.append(" | ", style="dim")
+            line.append(f"cp={row['等效比热容(J/kg-K)']:.2f}", style="green")
+            line.append(" | ", style="dim")
+            line.append(f"λ={row['等效导热率(W/m-K)']:.6f}", style="magenta")
+            line.append(" | ", style="dim")
+            line.append(f"μ={row['等效动力粘度(Pa-s)']:.2e}", style="yellow")
+            console.print(line)
+        
+        console.print("  ...", style="dim")
+        console.print()
 
 
 if __name__ == "__main__":
