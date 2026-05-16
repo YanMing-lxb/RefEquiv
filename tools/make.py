@@ -1,28 +1,3 @@
-"""
- =======================================================================
- ····Y88b···d88P················888b·····d888·d8b·······················
- ·····Y88b·d88P·················8888b···d8888·Y8P·······················
- ······Y88o88P··················88888b·d88888···························
- ·······Y888P··8888b···88888b···888Y88888P888·888·88888b·····d88b·······
- ········888······"88b·888·"88b·888·Y888P·888·888·888·"88b·d88P"88b·····
- ········888···d888888·888··888·888··Y8P··888·888·888··888·888··888·····
- ········888··888··888·888··888·888···"···888·888·888··888·Y88b·888·····
- ········888··"Y888888·888··888·888·······888·888·888··888··"Y88888·····
- ································································888·····
- ··························································Y8b·d88P·····
- ···························································"Y88P"······
- =======================================================================
-
- -----------------------------------------------------------------------
-Author       : 焱铭
-Date         : 2025-07-16 20:53:22 +0800
-LastEditTime : 2025-07-16 20:53:53 +0800
-Github       : https://github.com/YanMing-lxb/
-FilePath     : /test454c/tools/make.py
-Description  : 
- -----------------------------------------------------------------------
-"""
-
 import subprocess
 import sys
 from pathlib import Path
@@ -33,13 +8,13 @@ from config import __version__
 
 
 def inswhl():
-    console.print("📦 开始安装测试 test454c", style="status")
+    console.print("📦 开始安装测试 RefEquiv", style="status")
 
     uninstall_success = run_command(
-        command=["uv", "pip", "uninstall", "test454c"],
-        success_msg="旧版 test454c 卸载完成",
-        error_msg="旧版 test454c 卸载失败",
-        process_name="卸载旧版 test454c",
+        command=["uv", "pip", "uninstall", "RefEquiv"],
+        success_msg="旧版 RefEquiv 卸载完成",
+        error_msg="旧版 RefEquiv 卸载失败",
+        process_name="卸载旧版 RefEquiv",
     )
 
     whl_files = list(Path("dist").glob("*.whl"))
@@ -47,9 +22,9 @@ def inswhl():
         raise FileNotFoundError("dist 目录中没有找到 .whl 文件")
     install_success = run_command(
         command=["uv", "pip", "install", str(whl_files[0])],
-        success_msg="测试 test454c 安装完成",
-        error_msg="测试 test454c 安装失败",
-        process_name="安装测试版 test454c",
+        success_msg="测试 RefEquiv 安装完成",
+        error_msg="测试 RefEquiv 安装失败",
+        process_name="安装测试版 RefEquiv",
     )
     return uninstall_success and install_success
 

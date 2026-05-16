@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
- =======================================================================
- ····Y88b···d88P················888b·····d888·d8b·······················
- ·····Y88b·d88P·················8888b···d8888·Y8P·······················
- ······Y88o88P··················88888b·d88888···························
- ·······Y888P··8888b···88888b···888Y88888P888·888·88888b·····d88b·······
- ········888······"88b·888·"88b·888·Y888P·888·888·888·"88b·d88P"88b·····
- ········888···d888888·888··888·888··Y8P··888·888·888··888·888··888·····
- ········888··888··888·888··888·888···"···888·888·888··888·Y88b·888·····
- ········888··"Y888888·888··888·888·······888·888·888··888··"Y88888·····
- ································································888·····
- ··························································Y8b·d88P·····
- ···························································"Y88P"······
- =======================================================================
-
- -----------------------------------------------------------------------
-Author       : 焱铭
-Date         : 2026-04-04
-LastEditTime : 2026-04-04
-Github       : https://github.com/YanMing-lxb/
-FilePath     : /test454c/tools/app_builder.py
-Description  : 完整应用构建器
- -----------------------------------------------------------------------
-"""
-
 import sys
 import shutil
 from pathlib import Path
@@ -35,24 +8,9 @@ if sys.stdout.encoding != "UTF-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-
-def get_version():
-    version_file = project_root / "src" / "test454c" / "version.py"
-    if version_file.exists():
-        with open(version_file, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("__version__"):
-                    version = line.split("=")[1].strip()
-                    if (version.startswith('"') and version.endswith('"')) or (
-                        version.startswith("'") and version.endswith("'")
-                    ):
-                        version = version[1:-1]
-                    return version
-    return "0.1.0"
-
-
-__version__ = get_version()
+from src.version import __version__
 
 
 def print_header(text):
@@ -96,11 +54,11 @@ class Builder:
 class FullAppBuilder(Builder):
     def __init__(self, output_dir):
         super().__init__(output_dir)
-        self.exe_dir = project_root / "dist" / "test454c"
+        self.exe_dir = project_root / "dist"
 
     def check_dependencies(self):
         print_step("检查完整应用依赖项...")
-        exe_file = self.exe_dir / "test454c.exe"
+        exe_file = self.exe_dir / "RefEquiv.exe"
         if not exe_file.exists():
             print_error(f"可执行文件不存在: {exe_file}")
             print_error("请先运行 'make pack' 生成可执行文件")
@@ -111,11 +69,9 @@ class FullAppBuilder(Builder):
     def copy_executable(self):
         print_step("复制可执行文件...")
         try:
-            for item in self.exe_dir.iterdir():
-                if item.is_file():
-                    shutil.copy2(item, self.output_dir / item.name)
-                elif item.is_dir():
-                    shutil.copytree(item, self.output_dir / item.name)
+            exe_file = self.exe_dir / "RefEquiv.exe"
+            if exe_file.exists():
+                shutil.copy2(exe_file, self.output_dir / exe_file.name)
             print_success("可执行文件复制完成")
             return True
         except Exception as e:
@@ -130,7 +86,7 @@ class BuildManager:
 
     def build_full_app(self):
         print_header(f"构建完整应用版本 (v{self.version})")
-        full_app_dir = self.dist_dir / f"test454c-v{self.version}"
+        full_app_dir = self.dist_dir / f"RefEquiv-v{self.version}"
         print_step("开始构建完整应用版本...")
         builder = Builder(full_app_dir)
         if not builder.create_output_directory():
@@ -150,7 +106,7 @@ class BuildManager:
         except Exception as e:
             print_error(f"复制README文件失败: {e}")
         print_step("创建7z包")
-        zip_path = self.dist_dir / f"test454c-v{self.version}.7z"
+        zip_path = self.dist_dir / f"RefEquiv-v{self.version}.7z"
         if not self.create_zip_package(full_app_dir, zip_path):
             return False
         print_header("完整应用版本构建完成！")
@@ -209,7 +165,7 @@ def build_full_app():
 
 
 def main():
-    print_header("test454c 完整应用构建器")
+    print_header("RefEquiv 完整应用构建器")
     tracker = PerformanceTracker()
     try:
         result, performance = tracker.execute_with_timing(

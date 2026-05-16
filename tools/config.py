@@ -4,7 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.append(str(BASE_DIR))
 
-from version import __version__
+from src.version import __version__
 
 PROJECT_NAME = "RefEquiv"
 ROOT_DIR = BASE_DIR
