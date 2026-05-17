@@ -6,7 +6,7 @@ TOOLS_DIR = ./tools
 clean:
 	$(UV_RUN) tools/pack.py --clean
 
-build: clean
+pack: clean
 	$(UV_RUN) tools/pack.py
 
 # 上传标签

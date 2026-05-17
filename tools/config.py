@@ -10,5 +10,5 @@ PROJECT_NAME = "RefEquiv"
 ROOT_DIR = BASE_DIR
 SRC_DIR = ROOT_DIR / "src"
 ENTRY_POINT = SRC_DIR / "__main__.py"
-DATA_DIR = SRC_DIR / "data"
+DATA_DIR = SRC_DIR / "assets"
 ICON_FILE = DATA_DIR / "logo.ico"

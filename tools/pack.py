@@ -33,7 +33,7 @@ def run_pyinstaller():
     
     # 添加数据文件
     if DATA_DIR.exists():
-        cmd.extend(["--add-data", f"{DATA_DIR}{os.pathsep}data"])
+        cmd.extend(["--add-data", f"{DATA_DIR}{os.pathsep}assets"])
     
     # 最后添加入口点
     cmd.append(str(ENTRY_POINT))
