@@ -1,15 +1,10 @@
 """
 两相制冷剂等效单相物性计算工具（针对温度滑移区间的等效气相建模）
 基于 REFPROP 物性数据库，采用对称模型（EMT）计算等效导热系数，
-支持 McAdams 或 Cicchitti 粘度模型，并提供多种等效比热容方法。
-
-重要说明：
-    对于仿真软件中需要将两相混合物等效为气态制冷剂的场景，
-    推荐使用 cp_method = 'weighted' 或自定义 'enthalpy_based' 方法，
-    而 不推荐 直接使用饱和气比热容 ('gas')，因为后者忽略了
-    两相区温度滑移和实际焓变。
+支持 McAdams 或 Cicchitti 粘度模型，等效比热容采用基于焓差的方法。
 """
 
+from typing import List, Tuple
 import os
 import numpy as np
 import pandas as pd
@@ -21,8 +16,12 @@ from rich.text import Text
 
 console = Console()
 
+# 常量定义
+EPSILON = 1e-10
+T_EPSILON = 1e-6
 
-def calculate_equivalent_thermal_conductivity(λ_l, λ_v, φ_v):
+
+def calculate_equivalent_thermal_conductivity(λ_l: float, λ_v: float, φ_v: float) -> float:
     """
     采用 EMT（Effective Medium Theory）对称模型计算两相混合物的等效导热系数。
     原理：假设液相和气相随机均匀分布，有效导热系数 λ_eq 满足：
@@ -41,9 +40,9 @@ def calculate_equivalent_thermal_conductivity(λ_l, λ_v, φ_v):
     返回:
         λ_eq : 等效导热系数 (W/m·K)
     """
-    if φ_v <= 1e-10:
+    if φ_v <= EPSILON:
         return λ_l
-    if φ_v >= 1.0 - 1e-10:
+    if φ_v >= 1.0 - EPSILON:
         return λ_v
 
     a = 1.0
@@ -57,13 +56,13 @@ def calculate_equivalent_thermal_conductivity(λ_l, λ_v, φ_v):
 
     λ_min = min(λ_l, λ_v)
     λ_max = max(λ_l, λ_v)
-    if λ_min - 1e-10 <= λ_eq1 <= λ_max + 1e-10:
+    if λ_min - EPSILON <= λ_eq1 <= λ_max + EPSILON:
         return λ_eq1
     else:
         return λ_eq2
 
 
-def calculate_equivalent_viscosity(μ_l, μ_v, Q, φ_v, model='mcadams'):
+def calculate_equivalent_viscosity(μ_l: float, μ_v: float, Q: float, φ_v: float, model: str = 'mcadams') -> float:
     """
     计算两相混合物的等效动力粘度。
     支持两种常用经验模型：
@@ -86,9 +85,9 @@ def calculate_equivalent_viscosity(μ_l, μ_v, Q, φ_v, model='mcadams'):
     返回:
         μ_eq : 等效动力粘度 (Pa·s)
     """
-    if Q <= 1e-10:
+    if Q <= EPSILON:
         return μ_l
-    if Q >= 1.0 - 1e-10:
+    if Q >= 1.0 - EPSILON:
         return μ_v
 
     if model == 'mcadams':
@@ -99,7 +98,7 @@ def calculate_equivalent_viscosity(μ_l, μ_v, Q, φ_v, model='mcadams'):
         raise ValueError("不支持的粘度模型，可选'mcadams'或'cicchitti'")
 
 
-def safe_refprop_call(RP, fluid, inputs, outputs, units, iMass, iFlag, prop1, prop2, z):
+def safe_refprop_call(RP, fluid: str, inputs: str, outputs: str, units, iMass: int, iFlag: int, prop1: float, prop2: float, z: List[float]):
     """
     安全调用REFPROP底层DLL，忽略特定无害警告（如接近临界点时迭代轻微不收敛）。
     REFPROP返回的ierr含义：
@@ -134,7 +133,7 @@ def safe_refprop_call(RP, fluid, inputs, outputs, units, iMass, iFlag, prop1, pr
     return res
 
 
-def get_single_prop(RP, fluid, p_Pa, Q, prop_name):
+def get_single_prop(RP, fluid: str, p_Pa: float, Q: float, prop_name: str) -> float:
     """
     通过压力(P) + 质量干度(Q) 输入，获取单个物性值（SI单位）。
     参数:
@@ -144,7 +143,7 @@ def get_single_prop(RP, fluid, p_Pa, Q, prop_name):
     return res.Output[0]
 
 
-def get_transport_single_phase(RP, fluid, p_Pa, Q_phase):
+def get_transport_single_phase(RP, fluid: str, p_Pa: float, Q_phase: float) -> Tuple[float, float]:
     """
     获取纯液相 (Q=0) 或纯气相 (Q=1) 的输运性质（导热系数、动力粘度）。
     注：同一压力下，饱和液与饱和气温度不同，但输运性质只与压力及相态有关。
@@ -153,8 +152,8 @@ def get_transport_single_phase(RP, fluid, p_Pa, Q_phase):
     return res.Output[0], res.Output[1]
 
 
-def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
-                                   μ_model='mcadams', cp_method='weighted'):
+def generate_single_pressure_table(RP, fluid: str, p_MPa: float, n_points: int = 20,
+                                   μ_model: str = 'mcadams') -> Tuple[pd.DataFrame, float, float]:
     """
     生成指定压力下饱和两相区（干度 0→1）的等效物性数据表，适用于将两相混合物
     等效为单一“气相”用于仿真软件。
@@ -163,13 +162,7 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
         - 密度：直接使用 REFPROP 给出的混合物密度（真实密度）
         - 导热系数：EMT 对称模型
         - 动力粘度：McAdams 或 Cicchitti 模型
-        - 比热容：支持三种方法
-            * 'weighted' (推荐) : (1-Q)*CP_LIQ + Q*CP_VAP
-            * 'enthalpy_based' : (h_mix - h_liq_sat@T_bubble) / (T_mix - T_bubble)
-            * 'gas' (不推荐)   : 直接使用饱和气比热容 CP_VAP（忽略温度滑移）
-
-    对于仿真软件的气相物性，推荐使用 'weighted' 或 'enthalpy_based'，
-    因为 'gas' 方法会导致等效气体在温度滑移区间的吸热量严重失真。
+        - 比热容：基于焓差的等效比热容：(h_mix - h_liq_sat@T_bubble) / (T_mix - T_bubble)
 
     参数:
         RP        : REFPROPFunctionLibrary 实例
@@ -177,7 +170,6 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
         p_MPa     : 压力 (MPa)
         n_points  : 干度离散点数
         μ_model   : 粘度模型 ('mcadams' 或 'cicchitti')
-        cp_method : 比热容方法 ('weighted', 'enthalpy_based', 'gas')
 
     返回:
         df        : DataFrame，包含温度、干度、密度、等效比热容、等效导热率、
@@ -205,8 +197,8 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
     temp_text.append(f"{T_dew - T_bubble:.2f}℃", style="cyan")
     console.print(temp_text)
 
-    # 预先获取泡点下的饱和液焓（用于 enthalpy_based 方法）
-    h_sat_liq_bubble = get_single_prop(RP, fluid, p_Pa, 0.0, "H") if cp_method == 'enthalpy_based' else None
+    # 预先获取泡点下的饱和液焓（用于焓差法等效比热容）
+    h_sat_liq_bubble = get_single_prop(RP, fluid, p_Pa, 0.0, "H")
 
     # 预先获取固定的饱和相性质（同一压力下与干度无关）
     THC_L, VIS_L = get_transport_single_phase(RP, fluid, p_Pa, 0.0)
@@ -241,9 +233,9 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
             ρ_eq    = get_single_prop(RP, fluid, p_Pa, Q, "D")      # 混合物真实密度
 
             # ----- 气相体积分数 φ_v -----
-            if Q <= 1e-10:
+            if Q <= EPSILON:
                 φ_v = 0.0
-            elif Q >= 1.0 - 1e-10:
+            elif Q >= 1.0 - EPSILON:
                 φ_v = 1.0
             else:
                 v_l = 1 / D_L
@@ -255,24 +247,16 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
             λ_eq = calculate_equivalent_thermal_conductivity(THC_L, THC_V, φ_v)
             μ_eq = calculate_equivalent_viscosity(VIS_L, VIS_V, Q, φ_v, model=μ_model)
 
-            # ----- 等效比热容（关键：适用于仿真软件的气相等效）-----
-            if cp_method == 'weighted':
-                cp_eq = (1 - Q) * CP_L + Q * CP_V
-            elif cp_method == 'enthalpy_based':
-                # 基于焓差的等效比热容：从泡点饱和液加热到当前混合物温度所需的平均热容
-                delta_T = T_mix_K - T_bubble_K
-                if delta_T <= 1e-6:
-                    cp_eq = CP_L   # 接近泡点时使用液相比热
-                else:
-                    cp_eq = (H_mix - h_sat_liq_bubble) / delta_T
-            elif cp_method == 'gas':
-                # 不推荐：直接使用饱和气比热容
-                cp_eq = CP_V
+            # ----- 等效比热容：基于焓差 -----
+            # 从泡点饱和液加热到当前混合物温度所需的平均热容
+            delta_T = T_mix_K - T_bubble_K
+            if delta_T <= T_EPSILON:
+                cp_eq = CP_L   # 接近泡点时使用液相比热容
             else:
-                raise ValueError("cp_method 必须为 'weighted', 'enthalpy_based' 或 'gas'")
+                cp_eq = (H_mix - h_sat_liq_bubble) / delta_T
 
             # ----- 合理性检查 -----
-            if not (min(THC_L, THC_V) - 1e-10 <= λ_eq <= max(THC_L, THC_V) + 1e-10):
+            if not (min(THC_L, THC_V) - EPSILON <= λ_eq <= max(THC_L, THC_V) + EPSILON):
                 warn_text = Text()
                 warn_text.append("[WARN] ", style="yellow")
                 warn_text.append(f"Q={Q:.3f}", style="cyan")
@@ -322,7 +306,7 @@ def generate_single_pressure_table(RP, fluid, p_MPa, n_points=20,
     return df, T_bubble, T_dew
 
 
-def get_refprop_path():
+def get_refprop_path() -> str:
     """
     检查并获取REFPROP路径，支持环境变量和用户输入。
     """
@@ -349,7 +333,7 @@ def get_refprop_path():
             console.print("[ERR] 路径不存在，请重新输入！")
 
 
-def get_user_input():
+def get_user_input() -> Tuple[str, List[float], int, str]:
     """
     交互式获取用户输入参数，提供默认值说明。
     """
@@ -401,25 +385,6 @@ def get_user_input():
     )
     VISCOSITY_MODEL = 'mcadams' if vis_input == "1" else default_vis
 
-    # CP_METHOD
-    console.print()
-    console.print("[dim]选择等效比热容方法：[/]")
-    console.print("  [cyan]1[/] - weighted：质量加权平均 cp = (1-Q)·CP_LIQ + Q·CP_VAP")
-    console.print("  [cyan]2[/] - enthalpy_based：基于焓差的等效比热容 [dim](推荐)[/]")
-    console.print("  [cyan]3[/] - gas：直接使用饱和气比热容 CP_VAP [dim](不推荐，忽略温度滑移)[/]")
-    default_cp = 'enthalpy_based'
-    cp_input = Prompt.ask(
-        "[bold]等效比热容方法[/]",
-        choices=["1", "2", "3"],
-        default="2"
-    )
-    if cp_input == "1":
-        CP_METHOD = 'weighted'
-    elif cp_input == "3":
-        CP_METHOD = 'gas'
-    else:
-        CP_METHOD = default_cp
-
     # 配置确认
     console.print()
     console.print("[bold]配置确认[/]")
@@ -428,11 +393,11 @@ def get_user_input():
     console.print(f"  压力: [yellow]{', '.join([f'{p:.3f}' for p in PRESSURE_RANGE_MPa])} MPa[/]")
     console.print(f"  离散点数: [yellow]{N_POINTS_PER_PRESSURE}[/]")
     console.print(f"  粘度模型: [yellow]{VISCOSITY_MODEL}[/]")
-    console.print(f"  比热容方法: [yellow]{CP_METHOD}[/]")
+    console.print(f"  比热容方法: [yellow]焓差法[/]")
     console.print("-" * 40)
     console.print()
 
-    return fluid, PRESSURE_RANGE_MPa, N_POINTS_PER_PRESSURE, VISCOSITY_MODEL, CP_METHOD
+    return fluid, PRESSURE_RANGE_MPa, N_POINTS_PER_PRESSURE, VISCOSITY_MODEL
 
 
 def main():
@@ -440,7 +405,7 @@ def main():
     主程序：交互式配置参数并计算等效气相物性表。
     """
     # 获取用户输入
-    FLUID, PRESSURE_RANGE_MPa, N_POINTS_PER_PRESSURE, VISCOSITY_MODEL, CP_METHOD = get_user_input()
+    FLUID, PRESSURE_RANGE_MPa, N_POINTS_PER_PRESSURE, VISCOSITY_MODEL = get_user_input()
 
     # 生成输出文件名，支持单个或多个压力值
     if len(PRESSURE_RANGE_MPa) == 1:
@@ -506,8 +471,7 @@ def main():
             try:
                 df, T_bubble, T_dew = generate_single_pressure_table(
                     RP, FLUID, p, N_POINTS_PER_PRESSURE,
-                    μ_model=VISCOSITY_MODEL,
-                    cp_method=CP_METHOD
+                    μ_model=VISCOSITY_MODEL
                 )
                 df.insert(0, '压力(MPa)', p)
                 all_data.append(df)
@@ -572,7 +536,7 @@ def main():
         preview_title.append("-> ", style="cyan")
         preview_title.append(f"{p} MPa", style="yellow bold")
         preview_title.append(" 结果预览", style="dim")
-        preview_title.append(f" (等效比热容方法: {CP_METHOD})", style="dim")
+        preview_title.append(" (等效比热容方法: 焓差法)", style="dim")
         
         console.print(preview_title)
         
