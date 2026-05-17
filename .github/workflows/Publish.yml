@@ -65,15 +65,31 @@ jobs:
         id: extract_tag
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
-      - name: Read changelog
+      - name: Generate changelog
         run: |
-          changelog=$(cat CHANGELOG.md 2>/dev/null || echo "Initial release")
-          echo "$changelog" > CHANGELOG_RELEASE.txt
+          if [ -f "${{ github.workspace }}/CHANGELOG.md" ]; then
+            changelog=$(cat ${{ github.workspace }}/CHANGELOG.md)
+            tag_name=${{ env.TAG_NAME }}
+            version_header="## $tag_name"
+            if [[ $changelog == *"$version_header"* ]]; then
+              version_content=$(echo "$changelog" | awk -v version_header="$version_header" '
+                /^## / { if (p) exit; p=0 }
+                $0 ~ version_header { p=1; next }
+                p')
+              echo "$version_content"
+            else
+              echo "Version $tag_name not found in CHANGELOG.md"
+            fi
+            echo "$version_content" > ${{ github.workspace }}-CHANGELOG.txt
+          else
+            echo "No CHANGELOG.md found, using default message" > ${{ github.workspace }}-CHANGELOG.txt
+            echo "RefEquiv $tag_name Release" >> ${{ github.workspace }}-CHANGELOG.txt
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: CHANGELOG_RELEASE.txt
+          body_path: ${{ github.workspace }}-CHANGELOG.txt
           token: ${{ secrets.GITHUB_TOKEN }}
           name: RefEquiv ${{ env.TAG_NAME }}
           files: |
